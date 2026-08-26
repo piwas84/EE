@@ -475,7 +475,7 @@
     if (candidate.url && Lampa.Player) {
       Lampa.Player.play({
         url: candidate.url,
-        title: candidate.voice || 'Video'
+        title: candidate.voice || 'Відео'
       });
     }
   }
@@ -621,4 +621,94 @@
         var all = [];
         var needScan = false;
         results.forEach(function (r) {
-          if (r && r.lengt зроби таке саме тільки для лампи
+          if (r && r.length) {
+            all = all.concat(r);
+          } else {
+            needScan = true;
+          }
+        });
+
+        if (!all.length || needScan) {
+          var scanner = createScanner({
+            maxConcurrency: 3,
+            totalBudgetMs: 22000
+          });
+          return scanner.scan({
+            sources: sources,
+            season: season,
+            buildProviderUrl: context.buildProviderUrl,
+            authorizeUrl: context.authorizeUrl,
+            cacheId: cacheId
+          }).then(function (scannedGroups) {
+            if (scannedGroups && scannedGroups.length) {
+              return { groups: scannedGroups, cacheId: cacheId };
+            }
+            var groups = groupItems(all);
+            if (cacheId) cacheSet(cacheId, groups);
+            return { groups: groups, cacheId: cacheId };
+          });
+        }
+
+        var groups = groupItems(all);
+        if (cacheId) cacheSet(cacheId, groups);
+        return { groups: groups, cacheId: cacheId };
+      });
+    });
+  }
+
+  function runCatalog(context, season) {
+    if (Lampa.Loading) Lampa.Loading.start(function () {});
+
+    return collectGroups(context, season).then(function (res) {
+      if (Lampa.Loading) Lampa.Loading.stop();
+      return showGroups(context, res.groups, res.cacheId, season);
+    }).catch(function () {
+      if (Lampa.Loading) Lampa.Loading.stop();
+      if (Lampa.Noty) Lampa.Noty.show('Помилка завантаження каталогів озвучок');
+      else alert('Помилка завантаження каталогів озвучок');
+    });
+  }
+
+  function initPlugin() {
+    if (window.plugin_voice_catalog_buttons_ready) return;
+    window.plugin_voice_catalog_buttons_ready = true;
+
+    Lampa.Listener.follow('full', function (e) {
+      if (e.type === 'complite') {
+        var render = e.object.activity.render();
+        var buttons = render.find('.full-start-new__buttons, .full-start__buttons');
+        if (!buttons.length) return;
+
+        if (render.find('.btn--voice-catalog').length) return;
+
+        var btn = $('<div class="full-start__button selector btn--voice-catalog">' +
+          '<svg height="24" viewBox="0 0 24 24" width="24" fill="currentColor">' +
+            '<path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>' +
+          '</svg>' +
+          '<span>Озвучки</span>' +
+        '</div>');
+
+        btn.on('hover:enter', function () {
+          var movie = e.object.method ? e.object.method : e.object.data;
+          var context = makeContext(movie);
+
+          if (movie.number_of_seasons || movie.seasons || movie.first_air_date) {
+            showSeasons(context).then(function (season) {
+              if (season !== null) runCatalog(context, season);
+            });
+          } else {
+            runCatalog(context, 0);
+          }
+        });
+
+        buttons.append(btn);
+      }
+    });
+  }
+
+  if (window.Lampa) {
+    initPlugin();
+  } else {
+    window.addEventListener('lampa_ready', initPlugin);
+  }
+})();
